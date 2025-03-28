@@ -6,6 +6,7 @@ import openai
 import asyncio
 from dotenv import load_dotenv
 import os
+from fastapi.staticfiles import StaticFiles
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +14,9 @@ ASSEMBLYAI_KEY = os.getenv("ASSEMBLYAI_KEY")
 openai.api_key = os.getenv("OPENAI_KEY")
 
 app = FastAPI()
+
+# Serve static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS middleware
 app.add_middleware(
@@ -29,19 +33,25 @@ async def home():
     with open("templates/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html")
 
-# 📁 Upload route
-@app.post("/upload/")
+# 📁 Upload route (fixing form submission)
+@app.post("/upload")
 async def upload(file: UploadFile = File(...)):
     audio_file = await file.read()
 
-    # Upload to AssemblyAI
-    headers = {"authorization": ASSEMBLYAI_KEY}
+    # Uploading to AssemblyAI
+    headers = {
+        "authorization": ASSEMBLYAI_KEY
+    }
+
     upload_response = requests.post(
         "https://api.assemblyai.com/v2/upload",
         headers=headers,
-        files={"file": audio_file}
+        files={"file": ("audio.mp3", audio_file, file.content_type)}  # Correct file upload format
     )
-    audio_url = upload_response.json()["upload_url"]
+
+    upload_response.raise_for_status()
+
+    audio_url = upload_response.json().get("upload_url")
 
     # Start transcription
     transcribe_response = requests.post(
@@ -50,9 +60,9 @@ async def upload(file: UploadFile = File(...)):
         headers=headers
     )
 
-    transcript_id = transcribe_response.json()["id"]
+    transcript_id = transcribe_response.json().get("id")
 
-    # Wait for transcription to complete
+    # Polling for transcription status
     while True:
         status_response = requests.get(
             f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
@@ -79,41 +89,3 @@ async def upload(file: UploadFile = File(...)):
         "transcript": transcript,
         "summary": summary
     }
-
-# 🎤 Real-Time Transcription
-@app.websocket("/stream/")
-async def stream_audio(websocket: WebSocket):
-    await websocket.accept()
-
-    headers = {"authorization": ASSEMBLYAI_KEY}
-
-    async for audio_chunk in websocket.iter_bytes():
-        upload_response = requests.post(
-            "https://api.assemblyai.com/v2/upload",
-            headers=headers,
-            files={"file": audio_chunk}
-        )
-        audio_url = upload_response.json()["upload_url"]
-
-        # Start transcription
-        transcribe_response = requests.post(
-            "https://api.assemblyai.com/v2/transcript",
-            json={"audio_url": audio_url},
-            headers=headers
-        )
-        
-        transcript_id = transcribe_response.json()["id"]
-
-        # Wait for transcription
-        while True:
-            status_response = requests.get(
-                f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
-                headers=headers
-            )
-            status = status_response.json()["status"]
-
-            if status == "completed":
-                transcript = status_response.json()["text"]
-                await websocket.send_text(transcript)
-                break
-            await asyncio.sleep(3)

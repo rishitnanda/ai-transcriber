@@ -2,37 +2,77 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Transcriber</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            text-align: center;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .loading {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
-    <h1>AI Transcriber</h1>
+    <h1>Upload and Transcribe</h1>
 
-    <!-- File Upload -->
-    <form id="uploadForm" enctype="multipart/form-data">
-        <label>Upload Audio:</label>
-        <input type="file" name="file" id="fileInput" required>
-        <button type="submit">Upload & Transcribe</button>
+    <form id="upload-form" enctype="multipart/form-data" method="POST" action="/upload">
+        <input type="file" name="file" id="file" required>
+        <button type="submit" id="upload-btn">Upload & Transcribe</button>
     </form>
 
-    <h3>Transcription:</h3>
-    <pre id="transcription"></pre>
+    <div id="result"></div>
 
     <script>
-        document.getElementById("uploadForm").onsubmit = async (event) => {
-            event.preventDefault();
+        document.getElementById("upload-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const resultDiv = document.getElementById("result");
             
-            const fileInput = document.getElementById("fileInput");
-            const formData = new FormData();
-            formData.append("file", fileInput.files[0]);
+            // Show loading indicator
+            resultDiv.innerHTML = `<p class="loading">Uploading and transcribing... Please wait.</p>`;
 
-            const response = await fetch("/upload/", {
-                method: "POST",
-                body: formData
-            });
+            try {
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
 
-            const result = await response.json();
-            document.getElementById("transcription").textContent = result.transcript;
-        };
+                if (!response.ok) {
+                    throw new Error("Upload failed!");
+                }
+
+                const data = await response.json();
+
+                // Display transcript and summary
+                resultDiv.innerHTML = `
+                    <h2>Transcript:</h2>
+                    <p>${data.transcript}</p>
+                    <h2>Summary:</h2>
+                    <p>${data.summary}</p>
+                `;
+            } catch (error) {
+                console.error("Error:", error);
+                resultDiv.innerHTML = `<p class="error">An error occurred: ${error.message}</p>`;
+            }
+        });
     </script>
 </body>
 </html>
