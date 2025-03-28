@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, WebSocket, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import openai
 import asyncio
 from dotenv import load_dotenv
 import os
@@ -11,6 +12,7 @@ import time
 # Load environment variables
 load_dotenv()
 ASSEMBLYAI_KEY = os.getenv("ASSEMBLYAI_KEY")
+openai.api_key = os.getenv("OPENAI_KEY")
 
 app = FastAPI()
 
@@ -120,13 +122,36 @@ async def get_status(transcript_id: str = Query(...)):
                 transcript = data.get("text")
                 print("Transcription completed ✅")
 
-                return JSONResponse(
-                    content={
-                        "status": "completed",
-                        "transcript": transcript
-                    },
-                    status_code=200
-                )
+                # Summarize with GPT-4
+                prompt = f"Summarize the following meeting transcript:\n{transcript}"
+
+                try:
+                    summary_response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": "You are a helpful meeting assistant."},
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+
+                    summary = summary_response["choices"][0]["message"]["content"]
+                    print("Summarization completed ✅")
+
+                    return JSONResponse(
+                        content={
+                            "status": "completed",
+                            "transcript": transcript,
+                            "summary": summary
+                        },
+                        status_code=200
+                    )
+
+                except Exception as e:
+                    print(f"GPT-4 summarization failed ❌: {e}")
+                    return JSONResponse(
+                        content={"status": "failed", "error": "Summarization error"},
+                        status_code=500
+                    )
 
             elif status == "failed":
                 print("Transcription failed ❌")
